@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Шахматный советник</title>
+<style>
+:root{--bg:#f4f1ea;--card:#fff;--tx:#1d1d1b;--mut:#6b6a63;--l:#eeeed2;--d:#769656;--sel:#f6f669;--line:#d9d5c9;--btn:#2f6f3e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161715;--card:#222320;--tx:#ecebe5;--mut:#9a998f;--l:#b7c0a8;--d:#5d7a46;--sel:#c9c94a;--line:#383a35;--btn:#3d8c50}}
+:root[data-theme="dark"]{--bg:#161715;--card:#222320;--tx:#ecebe5;--mut:#9a998f;--l:#b7c0a8;--d:#5d7a46;--sel:#c9c94a;--line:#383a35;--btn:#3d8c50}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:600px;margin:0 auto;padding:12px}
+h1{font-size:20px;margin:4px 0 8px}
+#st{font-weight:600;margin-bottom:8px;min-height:1.4em}
+#wrap{--w:min(100vw - 24px,576px);position:relative;width:var(--w);aspect-ratio:1;margin:0 auto;font-size:calc(var(--w)/8*.78)}
+#bd{display:grid;grid-template-columns:repeat(8,1fr);width:100%;height:100%;border-radius:6px;overflow:hidden;user-select:none;-webkit-tap-highlight-color:transparent}
+.sq{position:relative;display:flex;align-items:center;justify-content:center;line-height:1}
+.sq.l{background:var(--l)}.sq.d{background:var(--d)}.sq.sel{background:var(--sel)}
+.sq.lm::before{content:"";position:absolute;inset:0;background:rgba(255,220,0,.38)}
+.sq span.p{position:relative;z-index:1}
+.w{color:#fff;text-shadow:0 0 2px #000,0 0 2px #000,0 0 1px #000,0 1px 1px #000}.b{color:#141414}
+.tg::after{content:"";position:absolute;width:28%;height:28%;border-radius:50%;background:rgba(0,0,0,.28);z-index:2}
+.cap{box-shadow:inset 0 0 0 .07em rgba(0,0,0,.35)}
+.co{position:absolute;font-size:10px;line-height:1;left:3px;top:2px;opacity:.7;font-weight:600}
+.co.f{left:auto;top:auto;right:3px;bottom:2px}
+#ar{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;align-items:center}
+button,select,input[type=text]{font:inherit;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--tx)}
+button.pri{background:var(--btn);border-color:var(--btn);color:#fff}
+#an{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:60px}
+.hd{font-weight:600;margin-bottom:6px}.hd small{font-weight:400;color:var(--mut)}
+.mv{display:flex;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line);font-size:18px}
+.mv:first-of-type{border-top:0}
+.mv b{width:22px;height:22px;border-radius:50%;color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center}
+.c0 b{background:#1fa84a}.c1 b{background:#e6960a}.c2 b{background:#4a78d0}
+.mv span{flex:1}.mv em{font-style:normal;font-variant-numeric:tabular-nums;font-weight:600}
+.mut{color:var(--mut);font-size:14px}
+details{margin-top:12px}summary{cursor:pointer;color:var(--mut)}
+#fen{width:100%;margin:8px 0}
+</style></head><body><main>
+<h1>♟︎ Шахматный советник</h1>
+<div id="st"></div>
+<div id="wrap"><div id="bd"></div><svg id="ar" viewBox="0 0 8 8"></svg></div>
+<div class="row">
+<button class="pri" id="bThink">Анализ</button>
+<button id="bBest">Сыграть лучший</button>
+<button id="bUndo">Отменить ход</button>
+<button id="bFlip">Перевернуть</button>
+<button id="bNew">Новая партия</button>
+</div>
+<div class="row mut">
+<label>Время на ход <select id="sT"><option value="1000">1 с</option><option value="3000" selected>3 с</option><option value="8000">8 с</option><option value="20000">20 с</option></select></label>
+<label><input type="checkbox" id="cAuto" checked> Авто-анализ</label>
+</div>
+<div id="an"><span class="mut">Сделайте ход — советник покажет три лучших варианта стрелками.</span></div>
+<details><summary>Загрузить позицию (FEN)</summary>
+<input type="text" id="fen" placeholder="Вставьте FEN, например из лички или приложения">
+<button id="bFen">Загрузить</button> <span class="mut" id="fenErr"></span></details>
+<p class="mut">Пешка при достижении последней горизонтали превращается в ферзя. Оценка в пешках с точки зрения белых; M3 — мат за 3 хода.</p>
+</main>
+<script>
+//ENGINE
+const V=[0,100,320,330,500,900,0],ND=[-33,-31,-18,-14,14,18,31,33],KD=[-17,-16,-15,-1,1,15,16,17],BD=[-17,-15,15,17],RD=[-16,-1,1,16],MATE=30000;
+const CR=new Int8Array(128).fill(15);CR[4]=12;CR[0]=13;CR[7]=14;CR[116]=3;CR[112]=7;CR[119]=11;
+let B=new Int8Array(128),side=1,cas=15,ep=-1,half=0,kp=[4,116],nodes=0,tEnd=0;
+const stk=[],hist=new Int32Array(16384);
+function att(s,c){
+ if(B[s-15*c]==c||B[s-17*c]==c)return true;
+ for(const d of ND)if(B[s+d]==2*c)return true;
+ for(const d of KD)if(B[s+d]==6*c)return true;
+ for(const d of BD){let t=s+d;while(!(t&136)&&!B[t])t+=d;if(!(t&136)&&(B[t]==3*c||B[t]==5*c))return true}
+ for(const d of RD){let t=s+d;while(!(t&136)&&!B[t])t+=d;if(!(t&136)&&(B[t]==4*c||B[t]==5*c))return true}
+ return false}
+const inCheck=()=>att(kp[side>0?0:1],-side);
+function gen(q){
+ const m=[],c=side,add=(f,t,p,l)=>m.push(f|t<<7|p<<14|l<<17);
+ for(let s=0;s<128;s++){
+  if(s&136){s+=7;continue}
+  const p=B[s]*c;if(p<=0)continue;
+  if(p==1){
+   const f=s+16*c,pm=(f>>4)==(c>0?7:0);
+   if(!B[f]&&(!q||pm)){
+    if(pm)for(let r=5;r>1;r--)add(s,f,r,0);
+    else{add(s,f,0,0);if((s>>4)==(c>0?1:6)&&!B[f+16*c])add(s,f+16*c,0,3)}}
+   for(const d of [15,17]){const t=s+d*c;if(t&136)continue;
+    if(B[t]*c<0){if(pm)for(let r=5;r>1;r--)add(s,t,r,0);else add(s,t,0,0)}
+    else if(t==ep)add(s,t,0,1)}
+  }else if(p==2||p==6){
+   for(const d of p==2?ND:KD){const t=s+d;if(t&136)continue;const v=B[t]*c;if(v<0||(!v&&!q))add(s,t,0,0)}
+   if(p==6&&!q){const o=c>0?0:112,k=c>0?1:4;
+    if(s==o+4){
+     if(cas&k&&!B[o+5]&&!B[o+6]&&B[o+7]==4*c&&!att(o+4,-c)&&!att(o+5,-c)&&!att(o+6,-c))add(s,o+6,0,2);
+     if(cas&2*k&&!B[o+3]&&!B[o+2]&&!B[o+1]&&B[o]==4*c&&!att(o+4,-c)&&!att(o+3,-c)&&!att(o+2,-c))add(s,o+2,0,2)}}
+  }else{
+   for(const d of p==3?BD:p==4?RD:KD){let t=s+d;while(!(t&136)){const v=B[t]*c;if(v>0)break;if(v<0){add(s,t,0,0);break}if(!q)add(s,t,0,0);t+=d}}
+  }}
+ return m}
+function mk(m){
+ const f=m&127,t=(m>>7)&127,pr=(m>>14)&7,fl=m>>17,p=B[f],cap=fl==1?-side:B[t];
+ stk.push([m,cap,cas,ep,half]);
+ B[t]=pr?pr*side:p;B[f]=0;
+ if(fl==1)B[t-16*side]=0;
+ if(fl==2){if(t>f){B[t-1]=B[t+1];B[t+1]=0}else{B[t+1]=B[t-2];B[t-2]=0}}
+ if(p==6*side)kp[side>0?0:1]=t;
+ ep=fl==3?(f+t)>>1:-1;cas&=CR[f]&CR[t];
+ half=(Math.abs(p)==1||cap)?0:half+1;side=-side}
+function um(){
+ const[m,cap,c,e,h]=stk.pop();side=-side;
+ const f=m&127,t=(m>>7)&127,pr=(m>>14)&7,fl=m>>17;
+ B[f]=pr?side:B[t];
+ if(fl==1){B[t]=0;B[t-16*side]=cap}else B[t]=cap;
+ if(fl==2){if(t>f){B[t+1]=B[t-1];B[t-1]=0}else{B[t-2]=B[t+1];B[t+1]=0}}
+ if(B[f]==6*side)kp[side>0?0:1]=f;
+ cas=c;ep=e;half=h}
+function legal(){const r=[];for(const m of gen(0)){mk(m);if(!att(kp[side>0?1:0],side))r.push(m);um()}return r}
+function ev(){
+ let s=0,m=0;
+ for(let q=0;q<128;q++){
+  if(q&136){q+=7;continue}
+  const p=B[q];if(!p)continue;
+  const c=p>0?1:-1,a=p*c,r=q>>4,f=q&7,rr=c>0?r:7-r,cd=Math.abs(r-3.5)+Math.abs(f-3.5);
+  let v=V[a];
+  if(a==1)v+=rr*rr*2+(3.5-Math.abs(f-3.5))*3;
+  else if(a==2)v+=(7-cd)*5;else if(a==3)v+=(7-cd)*3;else if(a==4)v+=rr==6?15:0;else if(a==5)v+=(7-cd)*1.5;
+  if(a>1&&a<6)m+=V[a];
+  s+=c*v}
+ const eg=m<2600;
+ for(let i=0;i<2;i++){const q=kp[i],cd=Math.abs((q>>4)-3.5)+Math.abs((q&7)-3.5);s+=(i?-1:1)*(eg?1:-1)*(7-cd)*8}
+ return side>0?s:-s}
+function order(ms,pv){
+ const k=ms.map(m=>{const f=m&127,t=(m>>7)&127,cp=Math.abs(B[t]);return m==pv?1e9:(cp?1e5+cp*16-Math.abs(B[f]):0)+((m>>14)&7)*500+hist[f<<7|t]});
+ return ms.map((_,i)=>i).sort((a,b)=>k[b]-k[a]).map(i=>ms[i])}
+function qs(a,b){
+ if((++nodes&2047)==0&&Date.now()>tEnd)throw 0;
+ const st=ev();if(st>=b)return st;if(st>a)a=st;
+ for(const m of order(gen(1))){
+  mk(m);if(att(kp[side>0?1:0],side)){um();continue}
+  const v=-qs(-b,-a);um();if(v>=b)return v;if(v>a)a=v}
+ return a}
+function ab(d,a,b,pl){
+ if((++nodes&2047)==0&&Date.now()>tEnd)throw 0;
+ const chk=inCheck();if(chk&&pl<10)d++;
+ if(d<=0)return qs(a,b);
+ if(half>=100)return 0;
+ let best=-MATE,any=false;
+ for(const m of order(gen(0))){
+  mk(m);if(att(kp[side>0?1:0],side)){um();continue}
+  any=true;const v=-ab(d-1,-b,-a,pl+1);um();
+  if(v>best){best=v;if(v>a){a=v;if(a>=b){if(!B[(m>>7)&127])hist[(m&127)<<7|((m>>7)&127)]+=d*d;break}}}}
+ if(!any)return chk?-MATE+pl:0;
+ return best}
+function load(fen){
+ const p=fen.trim().split(/\s+/);if(p.length<2)return false;
+ const nb=new Int8Array(128),k=[-1,-1];let r=7,f=0;
+ for(const ch of p[0]){
+  if(ch=='/'){r--;f=0}else if(/\d/.test(ch))f+=+ch;
+  else{const i='pnbrqk'.indexOf(ch.toLowerCase());if(i<0||f>7||r<0)return false;const c=ch==ch.toLowerCase()?-1:1;nb[r*16+f]=(i+1)*c;if(i==5)k[c>0?0:1]=r*16+f;f++}}
+ if(k[0]<0||k[1]<0)return false;
+ B=nb;kp=k;side=p[1]=='b'?-1:1;cas=0;
+ for(const ch of p[2]||'-'){const i='KQkq'.indexOf(ch);if(i>=0)cas|=1<<i}
+ ep=p[3]&&p[3]!='-'?(p[3].charCodeAt(1)-49)*16+p[3].charCodeAt(0)-97:-1;
+ half=+p[4]||0;stk.length=0;return true}
+//END
+const $=id=>document.getElementById(id),G=['','♟','♞','♝','♜','♛','♚'],SQ=s=>'abcdefgh'[s&7]+((s>>4)+1);
+const START='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+let sel=null,flip=false,LM=[],out=null,token=0;
+const T=()=>+$('sT').value,auto=()=>$('cAuto').checked;
+function fmt(w){const a=Math.abs(w),g=w<0?'−':'+';return a>MATE-200?g+'M'+Math.ceil((MATE-a)/2):g+(a/100).toFixed(2)}
+function mvName(m){
+ const f=m&127,t=(m>>7)&127,pr=(m>>14)&7,fl=m>>17;
+ return '<span class="'+(B[f]>0?'w':'b')+'">'+G[Math.abs(B[f])]+'\uFE0E</span> '+SQ(f)+(B[t]||fl==1?'×':'–')+SQ(t)+(pr?'='+G[pr]+'\uFE0E':'')+(fl==2?' (рокировка)':'')}
+function showPanel(d,ps,fin){
+ $('an').innerHTML='<div class="hd">Лучшие ходы <small>глубина '+d+(fin?'':' …')+' · '+(nodes/1000|0)+' тыс. узлов</small></div>'+
+ out.map((x,i)=>'<div class="mv c'+i+'"><b>'+(i+1)+'</b><span>'+mvName(x.m)+'</span><em>'+fmt(x.s*ps)+'</em></div>').join('')}
+const xy=s=>{const r=s>>4,f=s&7;return flip?[7-f+.5,r+.5]:[f+.5,7-r+.5]};
+function arrow(m,c,w){
+ const[x1,y1]=xy(m&127),[x2,y2]=xy((m>>7)&127),dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy),ux=dx/L,uy=dy/L,hl=.36,hw=.2*w+.04,ex=x2-ux*hl,ey=y2-uy*hl;
+ return '<line x1="'+x1+'" y1="'+y1+'" x2="'+ex+'" y2="'+ey+'" stroke="'+c+'" stroke-width="'+.13*w+'" stroke-linecap="round" opacity=".85"/><polygon points="'+(x2-ux*.04)+','+(y2-uy*.04)+' '+(ex-uy*hw)+','+(ey+ux*hw)+' '+(ex+uy*hw)+','+(ey-ux*hw)+'" fill="'+c+'" opacity=".85"/>'}
+function arrows(){const col=['#1fa84a','#e6960a','#4a78d0'];$('ar').innerHTML=out?out.map((_,i)=>i).reverse().map(i=>arrow(out[i].m,col[i],i?.7:1)).join(''):''}
+function status(){
+ const c=inCheck();let t;
+ if(!LM.length)t=c?'Мат! Победили '+(side>0?'чёрные':'белые'):'Пат — ничья';
+ else if(half>=100)t='Ничья по правилу 50 ходов';
+ else t='Ход '+(side>0?'белых':'чёрных')+(c?' · шах!':'');
+ $('st').textContent=t}
+function render(){
+ LM=legal();const bd=$('bd');bd.innerHTML='';
+ const last=stk.length?stk[stk.length-1][0]:0,lf=last&127,lt=(last>>7)&127;
+ const tg=new Set(LM.filter(m=>(m&127)==sel).map(m=>(m>>7)&127));
+ for(let row=0;row<8;row++)for(let col=0;col<8;col++){
+  const r=flip?row:7-row,f=flip?7-col:col,s=r*16+f,d=document.createElement('div'),p=B[s];
+  d.className='sq '+((r+f)%2?'l':'d')+(s==sel?' sel':'')+(last&&(s==lf||s==lt)?' lm':'')+(tg.has(s)?(p?' cap':' tg'):'');
+  if(p)d.innerHTML='<span class="p '+(p>0?'w':'b')+'">'+G[Math.abs(p)]+'\uFE0E</span>';
+  if(col==0)d.insertAdjacentHTML('beforeend','<i class="co" style="font-style:normal">'+(r+1)+'</i>');
+  if(row==7)d.insertAdjacentHTML('beforeend','<i class="co f" style="font-style:normal">'+'abcdefgh'[f]+'</i>');
+  d.onclick=()=>tap(s);bd.appendChild(d)}
+ arrows();status()}
+function tap(s){
+ if(sel!=null){const m=LM.find(x=>(x&127)==sel&&((x>>7)&127)==s&&(!((x>>14)&7)||((x>>14)&7)==5));if(m){play(m);return}}
+ sel=B[s]*side>0?s:null;render()}
+function play(m){token++;sel=null;mk(m);out=null;render();after()}
+function after(){if(auto())think();else $('an').innerHTML='<span class="mut">Нажмите «Анализ», чтобы найти лучшие ходы.</span>'}
+const tick=()=>new Promise(r=>setTimeout(r));
+async function think(){
+ const my=++token;out=null;arrows();
+ if(!LM.length){$('an').innerHTML='<span class="mut">Партия окончена.</span>';return}
+ const ps=side,base=stk.length,sv=[side,cas,ep,half];let best=null,ly=Date.now();
+ tEnd=Date.now()+(+$('sT').value);nodes=0;hist.fill(0);
+ $('an').innerHTML='<span class="mut">Думаю…</span>';
+ for(let d=1;d<=40;d++){
+  const cur=[];let ok=true;
+  try{
+   for(const m of order(LM,best?best[0].m:0)){
+    const al=cur.length>2?cur[2].s:-MATE-1;
+    mk(m);const v=-ab(d-1,-MATE-1,-al,1);um();
+    if(v>al){cur.push({m,s:v});cur.sort((x,y)=>y.s-x.s);if(cur.length>3)cur.pop()}
+    if(Date.now()-ly>60){await tick();ly=Date.now();if(my!==token)return}}
+  }catch(e){while(stk.length>base)um();[side,cas,ep,half]=sv;ok=false}
+  if(my!==token)return;
+  if(!ok)break;
+  out=best=cur;showPanel(d,ps,false);arrows();
+  if(Math.abs(cur[0].s)>MATE-100||Date.now()>tEnd)break}
+ if(out)showPanel(+$('an').querySelector('small').textContent.match(/\d+/)[0],ps,true);
+ else $('an').innerHTML='<span class="mut">Не хватило времени — увеличьте лимит.</span>'}
+$('bThink').onclick=()=>think();
+$('bBest').onclick=()=>{if(out&&out.length)play(out[0].m)};
+$('bUndo').onclick=()=>{if(!stk.length)return;token++;um();sel=null;out=null;render();after()};
+$('bFlip').onclick=()=>{flip=!flip;render()};
+$('bNew').onclick=()=>{token++;load(START);sel=null;out=null;render();after()};
+$('bFen').onclick=()=>{if(load($('fen').value)){$('fenErr').textContent='';token++;sel=null;out=null;render();after()}else $('fenErr').textContent='Не удалось разобрать FEN'};
+load(START);render();think();
+</script></body></html>
